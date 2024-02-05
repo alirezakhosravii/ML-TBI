@@ -1,0 +1,85 @@
+from scipy.stats import norm, bernoulli
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
+from sklearn.metrics import f1_score, classification_report
+from sklearn.model_selection import cross_val_score
+
+# Seed for reproducibility
+np.random.seed(42)
+n_samples = 1000
+
+# Features for TBI prognosis
+age = norm.rvs(40, 12, size=n_samples).clip(18, 85)  # Age of patients
+gcs = norm.rvs(12, 3, size=n_samples).clip(3, 15)  # Glasgow Coma Scale
+injury_severity = norm.rvs(25, 10, size=n_samples).clip(0, 75)  # Injury Severity Score
+surgery_duration = norm.rvs(4, 1.5, size=n_samples).clip(1, 8)  # Duration of surgery in hours
+blood_loss = norm.rvs(500, 200, size=n_samples).clip(100, 1500)  # Blood loss in ml
+recovery_days = norm.rvs(14, 5, size=n_samples).clip(5, 30)  # Recovery days in hospital
+complications = bernoulli.rvs(0.2, size=n_samples)  # Surgical complications (20% probability)
+
+# Prognosis (good or bad) based on various factors
+prognosis = []
+for i in range(n_samples):
+    success_factors = 0
+    if gcs[i] > 8:
+        success_factors += 1
+    if injury_severity[i] < 25:
+        success_factors += 1
+    if surgery_duration[i] < 5:
+        success_factors += 1
+    if blood_loss[i] < 800:
+        success_factors += 1
+    if recovery_days[i] < 20:
+        success_factors += 1
+    if complications[i] == 0:
+        success_factors += 1
+    prognosis.append('Good' if success_factors >= 4 else 'Bad')
+
+# Creating the DataFrame
+data = pd.DataFrame({
+    'Age': age,
+    'GCS': gcs,
+    'Injury_Severity': injury_severity,
+    'Surgery_Duration': surgery_duration,
+    'Blood_Loss': blood_loss,
+    'Recovery_Days': recovery_days,
+    'Complications': complications,
+    'Prognosis': prognosis
+})
+
+# Preprocessing setup
+cont_features = ['Age', 'GCS', 'Injury_Severity', 'Surgery_Duration', 'Blood_Loss', 'Recovery_Days']
+cat_features = ['Complications']
+
+preprocessor = ColumnTransformer(transformers=[
+    ('num', StandardScaler(), cont_features),
+    ('cat', OneHotEncoder(), cat_features)])
+
+# Splitting data
+X = data.drop('Prognosis', axis=1)
+y = data['Prognosis']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Setting up the pipeline and GridSearchCV
+pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', SVC(probability=True))])
+param_grid = {'classifier__C': [0.1, 1, 10], 'classifier__gamma': [0.001, 0.01, 0.1, 1]}
+grid_search = GridSearchCV(pipeline, param_grid, cv=5)
+grid_search.fit(X_train, y_train)
+
+# Model evaluation
+y_pred = grid_search.predict(X_test)
+f1 = f1_score(y_test, y_pred, average='weighted')
+classification_rep = classification_report(y_test, y_pred)
+
+# Cross-validation score
+cross_val_score_result = cross_val_score(grid_search, X, y, cv=5)
+
+# Display results
+best_parameters, f1_score_result, classification_report_text, cross_val_score_mean = grid_search.best_params_, f1, classification_rep, np.mean(cross_val_score_result)
+best_parameters, f1_score_result, classification_report_text, cross_val_score_mean
+
